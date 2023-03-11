@@ -9,6 +9,7 @@
 #include <assert.h>
 #define ASSERT(condition) assert(condition);
 #define ARRAY_COUNT(arr) (sizeof(arr)/sizeof(arr[0]))
+#define ABSOLUTE_VALUE(n) (((n) > 0) ? n : -n);
 #include "Types.h"
 #include "Win32Helpers.h"
 #include "File.h"
@@ -16,6 +17,8 @@
 #define OP_MOVE_REGISTER_OR_MEMORY_TO_OR_FROM_REGISTER(byte1) (((byte1) & 0b11111100) == 0b10001000) 
 #define OP_MOVE_IMMEDIATE_TO_REGISTER_OR_MEMORY(byte1)        (((byte1) & 0b11111110) == 0b11000110) 
 #define OP_MOVE_IMMEDIATE_TO_REGISTER(byte1)                  (((byte1) & 0b11110000) == 0b10110000) 
+#define OP_MOVE_MEMORY_TO_ACCUMULATOR(byte1)                  (((byte1) & 0b11111110) == 0b10100000) 
+#define OP_MOVE_ACCUMULATOR_TO_MEMORY(byte1)                  (((byte1) & 0b11111110) == 0b10100010) 
 
 // if no displacement and r/m = 110, then it's actually a 16 bit displacment (lol)
 #define MOD_MEMORY_MODE_NO_DISPLACEMENT     0b00000000
@@ -23,17 +26,21 @@
 #define MOD_MEMORY_MODE_16_BIT_DISPLACEMENT 0b10000000
 #define MOD_REGISTER_MODE_NO_DISPLACEMENT   0b11000000
 #define MOD_MASK 0b11000000
+#define RM_MASK  0b00000111
 
 void decode(cstring inputName);
 std::string get_register_string(u8 byte, bool is16Bit);
+template<typename T>
+void append_displacement_string(std::string& str, T displacement);
+u8 get_rm_with_displacement_string(std::string& str, u8* ptr, u8 byte1, u8 byte2);
 
 int main() {
     using std::string;
     cstring inputs[] = {
         //"listing_0037_single_register_mov",
         //"listing_0038_many_register_mov",
-        "listing_0039_more_movs", // TODO immediate to register
-        //"listing_0040_challenge_movs",
+        //"listing_0039_more_movs",
+        "listing_0040_challenge_movs",
     };
     for (int i = 0; i < ARRAY_COUNT(inputs); i++) {
         decode(inputs[i]);
@@ -54,75 +61,8 @@ void decode(cstring inputName) {
             std::string reg, rm, source, dest;
             u8 byte2 = *ptr;
             ptr++;
-            switch (byte2 & MOD_MASK) {
-            case MOD_MEMORY_MODE_NO_DISPLACEMENT:
-            {
-                // r/m mask
-                switch (byte2 & 0b00000111) {
-                case 0b00000000: rm = "[bx + si]"; break;
-                case 0b00000001: rm = "[bx + di]"; break;
-                case 0b00000010: rm = "[bp + si]"; break;
-                case 0b00000011: rm = "[bp + di]"; break;
-                case 0b00000100: rm = "si"; break;
-                case 0b00000101: rm = "di"; break;
-                case 0b00000110:
-                {
-                    u16 displacement = *((u16*)ptr);
-                    ptr += 2;
-                    rm = std::format("[{}]", displacement);
-                } break;
-                case 0b00000111: rm = "bx"; break;
-                }
-            } break;
-            case MOD_MEMORY_MODE_8_BIT_DISPLACEMENT:
-            {
-                u8 displacement = *ptr;
-                ptr++;
-                // r/m mask
-                switch (byte2 & 0b00000111) {
-                case 0b00000000: rm = std::string("[bx + si"); break;
-                case 0b00000001: rm = std::string("[bx + di"); break;
-                case 0b00000010: rm = std::string("[bp + si"); break;
-                case 0b00000011: rm = std::string("[bp + di"); break;
-                case 0b00000100: rm = std::string("[si"); break;
-                case 0b00000101: rm = std::string("[di"); break;
-                case 0b00000110: rm = std::string("[bp"); break;
-                case 0b00000111: rm = std::string("[bx"); break;
-                }
-                if (displacement != 0) {
-                    rm += std::format(" + {}]", displacement);
-                } else {
-                    rm += ']';
-                }
-            } break;
-            case MOD_MEMORY_MODE_16_BIT_DISPLACEMENT:
-            {
-                u16 displacement = *((u16*)ptr);
-                ptr += 2;
-                // r/m mask
-                switch (byte2 & 0b00000111) {
-                case 0b00000000: rm = std::string("[bx + si"); break;
-                case 0b00000001: rm = std::string("[bx + di"); break;
-                case 0b00000010: rm = std::string("[bp + si"); break;
-                case 0b00000011: rm = std::string("[bp + di"); break;
-                case 0b00000100: rm = std::string("[si"); break;
-                case 0b00000101: rm = std::string("[di"); break;
-                case 0b00000110: rm = std::string("[bp"); break;
-                case 0b00000111: rm = std::string("[bx"); break;
-                }
-                if (displacement != 0) {
-                    rm += std::format(" + {}]", displacement);
-                } else {
-                    rm += ']';
-                }
-            } break;
-            case MOD_REGISTER_MODE_NO_DISPLACEMENT:
-            {
-                // r/m mask
-                rm = get_register_string(byte2, (byte1 & 0b00000001) > 0);
-            } break;
-            }
-            // reg mask
+            ptr += get_rm_with_displacement_string(rm, ptr, byte1, byte2);
+            //                                                    reg mask
             reg = get_register_string(byte2 >> 3, (byte1 & 0b00000001) > 0);
             // check d bit to determine which registers are source and destination
             if ((byte1 & 0b00000010) > 0) {
@@ -133,24 +73,33 @@ void decode(cstring inputName) {
                 dest = rm;
             }
             output += std::format("mov {}, {}\n", dest, source);
-#if 0
         } else if (OP_MOVE_IMMEDIATE_TO_REGISTER_OR_MEMORY(byte1)) {
+            std::string dest, immediate;
+            u8 byte2 = *ptr;
+            ptr++;
+            ASSERT((byte2 & 0b00111000) == 0);
+            u8 bytes_displaced = get_rm_with_displacement_string(dest, ptr, byte1, byte2);
+            ptr += bytes_displaced;
+            
             //           w mask
             if ((byte1 & 0b00000001) > 0) {
+                i16 data = *(i16*)ptr;
+                ptr += 2;
+                immediate = std::format("word {}", data);
             } else {
-                    
+                i8 data = *(i8*)ptr;
+                ptr++;
+                immediate = std::format("byte {}", data);;
             }
-#endif
+            output += std::format("mov {}, {}\n", dest, immediate);
         } else if (OP_MOVE_IMMEDIATE_TO_REGISTER(byte1)) {
-            std::string reg, rm, source, dest;
-            //OutputDebugString("unimplemented OPCODE_MASK_IMMEDIATE_TO_REGISTER\n");
-            //ASSERT(false);
+            std::string reg, source, dest;
             //           w mask
             if ((byte1 & 0b00001000) > 0) {
                 // instruction is 3 bytes (2 bytes of data)
                 reg = get_register_string(byte1, true);
                 dest = reg;
-                i16 immediate = *((u16*)ptr);
+                i16 immediate = *((i16*)ptr);
                 ptr += 2;
                 source = std::format("{}", immediate);
             } else {
@@ -162,6 +111,28 @@ void decode(cstring inputName) {
                 source = std::format("{}", immediate);
             }
             output += std::format("mov {}, {}\n", dest, source);
+        } else if (OP_MOVE_MEMORY_TO_ACCUMULATOR(byte1)) {
+            //           w mask
+            if ((byte1 & 0b00000001) > 0) {
+                u16 addr = *(u16*)ptr;
+                ptr += 2;
+                output += std::format("mov ax, [{}]\n", addr);
+            } else {
+                u8 addr = *ptr;
+                ptr += 1;
+                output += std::format("mov al, [{}]\n", addr);
+            }
+        } else if (OP_MOVE_ACCUMULATOR_TO_MEMORY(byte1)) {
+            //           w mask
+            if ((byte1 & 0b00000001) > 0) {
+                u16 addr = *(u16*)ptr;
+                ptr += 2;
+                output += std::format("mov [{}], ax\n", addr);
+            } else {
+                u8 addr = *ptr;
+                ptr += 1;
+                output += std::format("mov [{}], al\n", addr);
+            }
         } else {
             OutputDebugString("encountered unimplemented opcode\n");
             ASSERT(false);
@@ -182,5 +153,79 @@ std::string get_register_string(u8 byte, bool is16Bit) {
     case 0b00000110: return (is16Bit) ? "si" : "dh";
     case 0b00000111: return (is16Bit) ? "di" : "bh";
     default: ASSERT(false); return "";
+    }
+}
+
+[[nodiscard]] 
+u8 get_rm_with_displacement_string(std::string& str, u8* ptr, u8 byte1, u8 byte2) {
+    u8 ptr_increment = 0;
+    switch (byte2 & MOD_MASK) {
+    case MOD_MEMORY_MODE_NO_DISPLACEMENT:
+    {
+        switch (byte2 & RM_MASK) {
+        case 0b00000000: str = "[bx + si]"; break;
+        case 0b00000001: str = "[bx + di]"; break;
+        case 0b00000010: str = "[bp + si]"; break;
+        case 0b00000011: str = "[bp + di]"; break;
+        case 0b00000100: str = "si"; break;
+        case 0b00000101: str = "di"; break;
+        case 0b00000110:
+        {
+            i16 displacement = *((i16*)ptr);
+            ptr_increment = 2;
+            str = std::format("[{}]", displacement);
+        } break;
+        case 0b00000111: str = "bx"; break;
+        }
+    } break;
+    case MOD_MEMORY_MODE_8_BIT_DISPLACEMENT:
+    {
+        i8 displacement = *((i8*)ptr);
+        ptr_increment = 1;
+        switch (byte2 & RM_MASK) {
+        case 0b00000000: str = std::string("[bx + si"); break;
+        case 0b00000001: str = std::string("[bx + di"); break;
+        case 0b00000010: str = std::string("[bp + si"); break;
+        case 0b00000011: str = std::string("[bp + di"); break;
+        case 0b00000100: str = std::string("[si"); break;
+        case 0b00000101: str = std::string("[di"); break;
+        case 0b00000110: str = std::string("[bp"); break;
+        case 0b00000111: str = std::string("[bx"); break;
+        }
+        append_displacement_string<i8>(str, displacement);
+    } break;
+    case MOD_MEMORY_MODE_16_BIT_DISPLACEMENT:
+    {
+        i16 displacement = *((i16*)ptr);
+        ptr_increment = 2;
+        switch (byte2 & RM_MASK) {
+        case 0b00000000: str = std::string("[bx + si"); break;
+        case 0b00000001: str = std::string("[bx + di"); break;
+        case 0b00000010: str = std::string("[bp + si"); break;
+        case 0b00000011: str = std::string("[bp + di"); break;
+        case 0b00000100: str = std::string("[si"); break;
+        case 0b00000101: str = std::string("[di"); break;
+        case 0b00000110: str = std::string("[bp"); break;
+        case 0b00000111: str = std::string("[bx"); break;
+        }
+        append_displacement_string<i16>(str, displacement);
+    } break;
+    case MOD_REGISTER_MODE_NO_DISPLACEMENT:
+    {
+        str = get_register_string(byte2, (byte1 & 0b00000001) > 0);
+    } break;
+    }
+    return ptr_increment;
+}
+
+template<typename T>
+void append_displacement_string(std::string& str, T displacement) { // u8 or u16
+    static_assert(std::is_same<std::decay_t<decltype(displacement)>, i8>::value || std::is_same<std::decay_t<decltype(displacement)>, i16>::value, "displacement must be of type i8 or i16");
+    if (displacement > 0) {
+        str += std::format(" + {}]", displacement);
+    } else if (displacement < 0) {
+        str += std::format(" - {}]", -displacement);
+    } else {
+        str += ']';
     }
 }
