@@ -19,7 +19,13 @@
 #define OP_MOVE_IMMEDIATE_TO_REGISTER(byte1)                  (((byte1) & 0b11110000) == 0b10110000) 
 #define OP_MOVE_MEMORY_TO_ACCUMULATOR(byte1)                  (((byte1) & 0b11111110) == 0b10100000) 
 #define OP_MOVE_ACCUMULATOR_TO_MEMORY(byte1)                  (((byte1) & 0b11111110) == 0b10100010) 
-
+#define OP_ADD_RM_AND_REG_TO_EITHER(byte1)                    (((byte1) & 0b11111100) == 0b00000000)
+#define OP_ADD_SUB_CMP_IMMEDIATE_TO_RM(byte1)                 (((byte1) & 0b11111100) == 0b10000000)
+#define OP_ADD_IMMEDIATE_TO_ACCUMULATOR(byte1)                (((byte1) & 0b11111110) == 0b00000100)
+#define OP_SUB_RM_AND_REG_TO_EITHER(byte1)                    (((byte1) & 0b11111100) == 0b00101000)
+#define OP_SUB_IMMEDIATE_FROM_ACCUMULATOR(byte1)              (((byte1) & 0b11111110) == 0b00011100)
+#define OP_CMP_RM_TO_REG(byte1)                               (((byte1) & 0b11111100) == 0b00111000)
+#define OP_CMP_IMMEDIATE_TO_ACCUMULATOR(byte1)                (((byte1) & 0b11111110) == 0b00111100)
 // if no displacement and r/m = 110, then it's actually a 16 bit displacment (lol)
 #define MOD_MEMORY_MODE_NO_DISPLACEMENT     0b00000000
 #define MOD_MEMORY_MODE_8_BIT_DISPLACEMENT  0b01000000
@@ -40,7 +46,9 @@ int main() {
         //"listing_0037_single_register_mov",
         //"listing_0038_many_register_mov",
         //"listing_0039_more_movs",
-        "listing_0040_challenge_movs",
+        //"listing_0040_challenge_movs",
+        "listing_0041_add_sub_cmp_jnz",
+        //"listing_0042_completionist_decode",
     };
     for (int i = 0; i < ARRAY_COUNT(inputs); i++) {
         decode(inputs[i]);
@@ -78,8 +86,7 @@ void decode(cstring inputName) {
             u8 byte2 = *ptr;
             ptr++;
             ASSERT((byte2 & 0b00111000) == 0);
-            u8 bytes_displaced = get_rm_with_displacement_string(dest, ptr, byte1, byte2);
-            ptr += bytes_displaced;
+            ptr += get_rm_with_displacement_string(dest, ptr, byte1, byte2);
             
             //           w mask
             if ((byte1 & 0b00000001) > 0) {
@@ -133,6 +140,87 @@ void decode(cstring inputName) {
                 ptr += 1;
                 output += std::format("mov [{}], al\n", addr);
             }
+        } else if (OP_ADD_RM_AND_REG_TO_EITHER(byte1)) {
+            std::string reg, rm, source, dest;
+            u8 byte2 = *ptr;
+            ptr++;
+            ptr += get_rm_with_displacement_string(rm, ptr, byte1, byte2);
+            //           w mask
+            if ((byte1 & 0b00000001) > 0) {
+                reg = get_register_string(byte2 >> 3, true);
+            } else {
+                reg = get_register_string(byte2 >> 3, false);
+            }
+            if ((byte1 & 0b00000010) > 0) {
+                source = rm;
+                dest = reg;
+            } else {
+                source = reg;
+                dest = rm;
+            }
+            output += std::format("add {}, {}\n", dest, source);
+        } else if (OP_ADD_SUB_CMP_IMMEDIATE_TO_RM(byte1)) {
+            std::string op, rm, immediate, type;
+            u8 byte2 = *ptr;
+            ptr++;
+            if ((byte2 & 0b00111000) == 0b00000000) {
+                op = "add";
+            } else if ((byte2 & 0b00111000) == 0b00010100) {
+                op = "sub";
+            } else if ((byte2 & 0b00111000) == 0b00011100) {
+                op = "cmp";
+            }
+            ptr += get_rm_with_displacement_string(rm, ptr, byte1, byte2);
+            //           s mask
+            if ((byte1 & 0b00000010) > 0) {
+                // TODO @implementation sign extension of 8 bits into 16 bits if w = 1
+                if (((byte1 & 0b00000001) > 0)) {
+                    u8 low = *ptr;
+                    ptr++;
+                    u8 high = ((low & 0b10000000) > 0) ? 0b11111111 : 0b00000000;
+                    i16 quad = 0;
+                    quad |= high;
+                    quad <<= 8;
+                    quad |= low;
+                    immediate = std::format("{}", quad);
+                    type = "word";
+                } else {
+                    ASSERT(false);
+                }
+            } else {
+                //            w mask
+                if (((byte1 & 0b00000001) > 0)) {
+                    i16 data = *((i16*)ptr);
+                    ptr += 2;
+                    type = "word";
+                    immediate = std::format("{}", data);
+                } else {
+                    i8 data = *((i8*)ptr);
+                    ptr++;
+                    type = "byte";
+                    immediate = std::format("{}", data);
+                }
+            }
+            output += std::format("{} {} {}, {}\n", op, type, rm, immediate);
+        } else if (OP_ADD_IMMEDIATE_TO_ACCUMULATOR(byte1)) {
+            //           w mask
+            if ((byte1 & 0b00000001) > 0) {
+                i16 data = *(i16*)ptr;
+                ptr += 2;
+                output += std::format("add ax, {}", data);
+            } else {
+                i8 data = *(i8*)ptr;
+                ptr++;
+                output += std::format("add al, {}", data);
+            }
+        } else if (OP_SUB_RM_AND_REG_TO_EITHER(byte1)) {
+            ASSERT(false);
+        } else if (OP_SUB_IMMEDIATE_FROM_ACCUMULATOR(byte1)) {
+            ASSERT(false);
+        } else if (OP_CMP_RM_TO_REG(byte1)) {
+            ASSERT(false);
+        } else if (OP_CMP_IMMEDIATE_TO_ACCUMULATOR(byte1)) {
+            ASSERT(false);
         } else {
             OutputDebugString("encountered unimplemented opcode\n");
             ASSERT(false);
