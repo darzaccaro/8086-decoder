@@ -23,7 +23,7 @@
 #define OP_ADD_SUB_CMP_IMMEDIATE_TO_RM(byte1)                 (((byte1) & 0b11111100) == 0b10000000)
 #define OP_ADD_IMMEDIATE_TO_ACCUMULATOR(byte1)                (((byte1) & 0b11111110) == 0b00000100)
 #define OP_SUB_RM_AND_REG_TO_EITHER(byte1)                    (((byte1) & 0b11111100) == 0b00101000)
-#define OP_SUB_IMMEDIATE_FROM_ACCUMULATOR(byte1)              (((byte1) & 0b11111110) == 0b00011100)
+#define OP_SUB_IMMEDIATE_FROM_ACCUMULATOR(byte1)              (((byte1) & 0b11111110) == 0b00101100)
 #define OP_CMP_RM_TO_REG(byte1)                               (((byte1) & 0b11111100) == 0b00111000)
 #define OP_CMP_IMMEDIATE_TO_ACCUMULATOR(byte1)                (((byte1) & 0b11111110) == 0b00111100)
 // if no displacement and r/m = 110, then it's actually a 16 bit displacment (lol)
@@ -140,8 +140,15 @@ void decode(cstring inputName) {
                 ptr += 1;
                 output += std::format("mov [{}], al\n", addr);
             }
-        } else if (OP_ADD_RM_AND_REG_TO_EITHER(byte1)) {
-            std::string reg, rm, source, dest;
+        } else if (OP_ADD_RM_AND_REG_TO_EITHER(byte1) || OP_SUB_RM_AND_REG_TO_EITHER(byte1) || OP_CMP_RM_TO_REG(byte1)) {
+            std::string op, reg, rm, source, dest;
+            if (OP_ADD_RM_AND_REG_TO_EITHER(byte1)) {
+                op = "add";
+            } else if (OP_SUB_RM_AND_REG_TO_EITHER(byte1)) {
+                op = "sub";
+            } else {
+                op = "cmp";
+            }
             u8 byte2 = *ptr;
             ptr++;
             ptr += get_rm_with_displacement_string(rm, ptr, byte1, byte2);
@@ -158,7 +165,7 @@ void decode(cstring inputName) {
                 source = reg;
                 dest = rm;
             }
-            output += std::format("add {}, {}\n", dest, source);
+            output += std::format("{} {}, {}\n", op, dest, source);
         } else if (OP_ADD_SUB_CMP_IMMEDIATE_TO_RM(byte1)) {
             std::string op, rm, immediate, type;
             u8 byte2 = *ptr;
@@ -202,25 +209,25 @@ void decode(cstring inputName) {
                 }
             }
             output += std::format("{} {} {}, {}\n", op, type, rm, immediate);
-        } else if (OP_ADD_IMMEDIATE_TO_ACCUMULATOR(byte1)) {
+        } else if (OP_ADD_IMMEDIATE_TO_ACCUMULATOR(byte1) || OP_SUB_IMMEDIATE_FROM_ACCUMULATOR(byte1) || OP_CMP_IMMEDIATE_TO_ACCUMULATOR(byte1)) {
+            std::string op;
+            if (OP_ADD_IMMEDIATE_TO_ACCUMULATOR(byte1)) {
+                op = "add";
+            } else if (OP_SUB_IMMEDIATE_FROM_ACCUMULATOR(byte1)) {
+                op = "sub";
+            } else {
+                op = "cmp";
+            }
             //           w mask
             if ((byte1 & 0b00000001) > 0) {
                 i16 data = *(i16*)ptr;
                 ptr += 2;
-                output += std::format("add ax, {}", data);
+                output += std::format("{} ax, {}", op, data);
             } else {
                 i8 data = *(i8*)ptr;
                 ptr++;
-                output += std::format("add al, {}", data);
+                output += std::format("{} al, {}", op, data);
             }
-        } else if (OP_SUB_RM_AND_REG_TO_EITHER(byte1)) {
-            ASSERT(false);
-        } else if (OP_SUB_IMMEDIATE_FROM_ACCUMULATOR(byte1)) {
-            ASSERT(false);
-        } else if (OP_CMP_RM_TO_REG(byte1)) {
-            ASSERT(false);
-        } else if (OP_CMP_IMMEDIATE_TO_ACCUMULATOR(byte1)) {
-            ASSERT(false);
         } else {
             OutputDebugString("encountered unimplemented opcode\n");
             ASSERT(false);
