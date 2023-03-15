@@ -26,6 +26,46 @@
 #define OP_SUB_IMMEDIATE_FROM_ACCUMULATOR(byte1)              (((byte1) & 0b11111110) == 0b00101100)
 #define OP_CMP_RM_TO_REG(byte1)                               (((byte1) & 0b11111100) == 0b00111000)
 #define OP_CMP_IMMEDIATE_TO_ACCUMULATOR(byte1)                (((byte1) & 0b11111110) == 0b00111100)
+// jump if not equal / zero
+#define OP_JNZ(byte1)    ((byte1) == 0b01110101)
+// jump on equal / zero
+#define OP_JE(byte1)     ((byte1) == 0b01110100)
+// jump jump if <
+#define OP_JL(byte1)     ((byte1) == 0b01111100)
+// jump if <=
+#define OP_JLE(byte1)    ((byte1) == 0b01111110)
+// jump if below
+#define OP_JB(byte1)     ((byte1) == 0b01110010)
+// jump if below or equal
+#define OP_JBE(byte1)    ((byte1) == 0b01110110)
+// jump on parity / parity even
+#define OP_JP(byte1)     ((byte1) == 0b01111010)
+// jump on overflow
+#define OP_JO(byte1)     ((byte1) == 0b01110000)
+// jump on sign
+#define OP_JS(byte1)     ((byte1) == 0b01111000)
+// jump if not <
+#define OP_JNL(byte1)    ((byte1) == 0b01111101)
+// jump if >
+#define OP_JG(byte1)     ((byte1) == 0b01111111)
+// jump not below
+#define OP_JNB(byte1)    ((byte1) == 0b01110011)
+// jump if above
+#define OP_JA(byte1)     ((byte1) == 0b01110111)
+// jump not par
+#define OP_JNP(byte1)    ((byte1) == 0b01111011)
+// jump not overflow
+#define OP_JNO(byte1)    ((byte1) == 0b01110001)
+// jump not sign
+#define OP_JNS(byte1)    ((byte1) == 0b01111001)
+#define OP_LOOP(byte1)   ((byte1) == 0b11100010)
+// while zero/equal
+#define OP_LOOPZ(byte1)  ((byte1) == 0b11100001)
+#define OP_LOOPNZ(byte1) ((byte1) == 0b11100000)
+// jump if cx register is zero
+#define OP_JCXZ(byte1)   ((byte1) == 0b11100011)
+
+// TODO etc...
 // if no displacement and r/m = 110, then it's actually a 16 bit displacment (lol)
 #define MOD_MEMORY_MODE_NO_DISPLACEMENT     0b00000000
 #define MOD_MEMORY_MODE_8_BIT_DISPLACEMENT  0b01000000
@@ -172,9 +212,9 @@ void decode(cstring inputName) {
             ptr++;
             if ((byte2 & 0b00111000) == 0b00000000) {
                 op = "add";
-            } else if ((byte2 & 0b00111000) == 0b00010100) {
+            } else if ((byte2 & 0b00111000) == 0b00101000) {
                 op = "sub";
-            } else if ((byte2 & 0b00111000) == 0b00011100) {
+            } else if ((byte2 & 0b00111000) == 0b00111000) {
                 op = "cmp";
             }
             ptr += get_rm_with_displacement_string(rm, ptr, byte1, byte2);
@@ -222,12 +262,92 @@ void decode(cstring inputName) {
             if ((byte1 & 0b00000001) > 0) {
                 i16 data = *(i16*)ptr;
                 ptr += 2;
-                output += std::format("{} ax, {}", op, data);
+                output += std::format("{} ax, {}\n", op, data);
             } else {
                 i8 data = *(i8*)ptr;
                 ptr++;
-                output += std::format("{} al, {}", op, data);
+                output += std::format("{} al, {}\n", op, data);
             }
+        } else if (OP_JNZ(byte1)) {
+            i8 byte2 = *(i8*)ptr; // offset to jump to
+            ptr++;
+            output += std::format("jnz {}\n", byte2);
+        } else if (OP_JE(byte1)) {
+            i8 byte2 = *(i8*)ptr; // offset to jump to
+            ptr++;
+            output += std::format("je {}\n", byte2);
+        } else if (OP_JL(byte1)) {
+            i8 byte2 = *(i8*)ptr; // offset to jump to
+            ptr++;
+            output += std::format("jl {}\n", byte2);
+        } else if (OP_JLE(byte1)) {
+            i8 byte2 = *(i8*)ptr; // offset to jump to
+            ptr++;
+            output += std::format("jle {}\n", byte2);
+        } else if (OP_JB(byte1)) {
+            i8 byte2 = *(i8*)ptr; // offset to jump to
+            ptr++;
+            output += std::format("jb {}\n", byte2);
+        } else if (OP_JBE(byte1)) {
+            i8 byte2 = *(i8*)ptr; // offset to jump to
+            ptr++;
+            output += std::format("jbe {}\n", byte2);
+        } else if (OP_JP(byte1)) {
+            i8 byte2 = *(i8*)ptr; // offset to jump to
+            ptr++;
+            output += std::format("jp {}\n", byte2);
+        } else if (OP_JO(byte1)) {
+            i8 byte2 = *(i8*)ptr; // offset to jump to
+            ptr++;
+            output += std::format("jo {}\n", byte2);
+        } else if (OP_JS(byte1)) {
+            i8 byte2 = *(i8*)ptr; // offset to jump to
+            ptr++;
+            output += std::format("js {}\n", byte2);
+        } else if (OP_JNL(byte1)) {
+            i8 byte2 = *(i8*)ptr; // offset to jump to
+            ptr++;
+            output += std::format("jnl {}\n", byte2);
+        } else if (OP_JG(byte1)) {
+            i8 byte2 = *(i8*)ptr; // offset to jump to
+            ptr++;
+            output += std::format("jg {}\n", byte2);
+        } else if (OP_JNB(byte1)) {
+            i8 byte2 = *(i8*)ptr; // offset to jump to
+            ptr++;
+            output += std::format("jnb {}\n", byte2);
+        } else if (OP_JA(byte1)) {
+            i8 byte2 = *(i8*)ptr; // offset to jump to
+            ptr++;
+            output += std::format("ja {}\n", byte2);
+        } else if (OP_JNP(byte1)) {
+            i8 byte2 = *(i8*)ptr; // offset to jump to
+            ptr++;
+            output += std::format("jnp {}\n", byte2);
+        } else if (OP_JNO(byte1)) {
+            i8 byte2 = *(i8*)ptr; // offset to jump to
+            ptr++;
+            output += std::format("jno {}\n", byte2);
+        } else if (OP_JNS(byte1)) {
+            i8 byte2 = *(i8*)ptr; // offset to jump to
+            ptr++;
+            output += std::format("jns {}\n", byte2);
+        } else if (OP_LOOP(byte1)) {
+            i8 byte2 = *(i8*)ptr; // offset to jump to
+            ptr++;
+            output += std::format("loop {}\n", byte2);
+        } else if (OP_LOOPZ(byte1)) {
+            i8 byte2 = *(i8*)ptr; // offset to jump to
+            ptr++;
+            output += std::format("loopz {}\n", byte2);
+        } else if (OP_LOOPNZ(byte1)) {
+            i8 byte2 = *(i8*)ptr; // offset to jump to
+            ptr++;
+            output += std::format("loopnz {}\n", byte2);
+        } else if (OP_JCXZ(byte1)) {
+            i8 byte2 = *(i8*)ptr; // offset to jump to
+            ptr++;
+            output += std::format("jcxz {}\n", byte2);
         } else {
             OutputDebugString("encountered unimplemented opcode\n");
             ASSERT(false);
